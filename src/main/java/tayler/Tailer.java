@@ -26,6 +26,11 @@ import java.io.RandomAccessFile;
  * Implementation of the unix "tail -f" functionality, forked from the Apache Commons IO project and providing fixes, cleaner APIs and improved
  * performance with buffered reads.
  * <p>
+ * Functionally speaking, the only notable difference with the Apache version is that the tailer thread will be able to read lines only if shorter than the buffer size,
+ * and will pause after a full buffer is read, even if end of file hasn't been reached yet: 
+ * this is in order to avoid flooding with tail requests in case of large log files; as a consequence, please set an appropriate buffer size (default one is 1024 bytes).
+ * </p>
+ * <p>
  * <h2>1. Create a TailerListener implementation</h3>
  * <p>
  * First you need to create a {@link TailerListener} implementation
@@ -113,9 +118,10 @@ public class Tailer implements Runnable {
      */
     private volatile boolean run = true;
     /**
-     * The "truncated" line from buffered reads (when buffer ends prior to reaching eol or eof).
+     * The "truncated" line from buffered reads (when buffer ends prior to reaching eol or eof), as a recycled char array.
      */
-    private volatile String remaind = "";
+    private volatile char[] remaind;
+    private volatile int remaindIndex;
     /**
      * The buffer size for buffered reads.
      */
@@ -174,6 +180,7 @@ public class Tailer implements Runnable {
 
         this.bufferSize = bufferSize;
         this.buffer = new byte[bufferSize];
+        this.remaind = new char[bufferSize];
 
         // Save and prepare the listener
         this.listener = listener;
@@ -294,13 +301,7 @@ public class Tailer implements Runnable {
      */
     private long readLines(RandomAccessFile reader) throws IOException {
         int read = reader.read(buffer);
-        boolean eof = read < bufferSize;
         readLinesFromBuffer(read);
-        while (!eof) {
-            read = reader.read(buffer);
-            eof = read < bufferSize;
-            readLinesFromBuffer(read);
-        }
         return reader.getFilePointer();
     }
 
@@ -328,7 +329,6 @@ public class Tailer implements Runnable {
      * @throws java.io.IOException if an I/O error occurs.
      */
     private int readLineFromBuffer(int start, int size) throws IOException {
-        StringBuilder builder = new StringBuilder(remaind);
         int read = 0;
         int current = start;
         int ch = 0;
@@ -346,17 +346,15 @@ public class Tailer implements Runnable {
                     break;
                 default:
                     if (seenCR) {
-                        builder.append('\r');
+                        remaind[remaindIndex++] = '\r';
                         seenCR = false;
                     }
-                    builder.append((char) ch); // add character, not its ascii value
+                    remaind[remaindIndex++] = (char) ch; // add character, not its ascii value
             }
         }
-        if (!eol) {
-            remaind = builder.toString();
-        } else {
-            remaind = "";
-            listener.handle(builder.toString());
+        if (eol) {
+            listener.handle(new String(remaind, 0, remaindIndex));
+            remaindIndex = 0;
         }
         return read;
     }

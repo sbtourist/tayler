@@ -79,56 +79,6 @@ public class TailerTest {
     }
 
     @Test
-    public void testLongFile() throws Exception {
-        long delay = 50;
-
-        File file = new File(getTestDirectory(), "testLongFile.txt");
-        createFile(file);
-        for (int i = 0; i < 10000; i++) {
-            writeString(file, "LineLineLineLineLineLineLineLineLineLine\n");
-        }
-        writeString(file, "SBTOURIST\n");
-
-        TestTailerListener listener = new TestTailerListener();
-        tailer = new Tailer(file, listener, delay, false);
-
-        long start = System.currentTimeMillis();
-
-        Thread thread = new Thread(tailer);
-        thread.start();
-
-        List<String> lines = listener.getLines();
-        while (lines.isEmpty() || !lines.get(lines.size() - 1).equals("SBTOURIST")) {
-            lines = listener.getLines();
-        }
-        System.out.println("Elapsed: " + (System.currentTimeMillis() - start));
-
-        listener.clear();
-    }
-
-    @Test
-    public void testBufferBreak() throws Exception {
-        long delay = 50;
-
-        File file = new File(getTestDirectory(), "testBufferBreak.txt");
-        createFile(file);
-        writeString(file, "SBTOURIST\n");
-
-        TestTailerListener listener = new TestTailerListener();
-        tailer = new Tailer(file, listener, delay, false, 1);
-
-        Thread thread = new Thread(tailer);
-        thread.start();
-
-        List<String> lines = listener.getLines();
-        while (lines.isEmpty() || !lines.get(lines.size() - 1).equals("SBTOURIST")) {
-            lines = listener.getLines();
-        }
-
-        listener.clear();
-    }
-
-    @Test
     public void testTailerEof() throws Exception {
         // Create & start the Tailer
         long delay = 50;
@@ -287,6 +237,7 @@ public class TailerTest {
         RandomAccessFile raf = new RandomAccessFile(file, "rws");
         try {
             raf.setLength(0);
+            raf.getFD().sync();
         } finally {
             IOUtils.closeQuietly(raf);
         }
